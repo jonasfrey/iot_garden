@@ -1,0 +1,26 @@
+{
+  "name": "@apn/websersocketgui",
+  "version": "0.3.9",
+  "license": "GPL-2.0-only",
+  "exports": {
+    ".": "./exports.js",
+    "./init": "./serverside/init.js"
+  },
+  "publish": {
+    "exclude": [
+      "AI_responses_summaries.md",
+      "planning/"
+    ]
+  },
+  "tasks": {
+    "run": "B_DENO_TASK=1 deno run --allow-net --allow-read --allow-write --allow-env --allow-ffi --allow-run --env websersocket_21cdb891-4219-468a-b8aa-4d018930375d.js",
+    "stop": "pkill -f 'deno run.*websersocket_21cdb891-4219-468a-b8aa-4d018930375d.js' || echo 'No running websersocket process found.'",
+    "restart": "deno task stop && deno task run",
+    "test": "deno test --allow-net --allow-read --allow-write --allow-env --allow-ffi serverside/function_testings.js",
+    "uninit": "deno run --allow-read --allow-write --allow-env --env serverside/uninit.js"
+  },
+  "imports": {
+    "@apn/websersocketgui/constructors_framework": "./localhost/constructors_framework.js",
+    "@std/fs": "jsr:@std/fs@^1.0.23"
+  }
+}

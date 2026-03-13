@@ -1,0 +1,530 @@
+/* Copyright (C) 2026 Jonas Immanuel Frey - Licensed under GPLv2. See LICENSE file for details */
+
+/* --- reset --- */
+*,
+*::before,
+*::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* --- variables --- */
+:root {
+    --c-bg: #0a0a12;
+    --c-surface: rgba(255, 255, 255, 0.05);
+    --c-text: #e2e8f0;
+    --c-text-dim: #a0aec0;
+    --c-text-mute: #4a5568;
+    --c-border: rgba(255, 255, 255, 0.08);
+    --c-accent: #8b74ea;
+    --c-accent-dim: rgba(139, 116, 234, 0.15);
+    --c-danger: #fc8181;
+    --c-info: #63b3ed;
+    --c-success: #68d391;
+    --c-warning: #ed8936;
+    --r: 6px;
+    --gap: 0.5rem;
+}
+
+/* --- base --- */
+body {
+    font-family: system-ui, sans-serif;
+    line-height: 1.5;
+    background: var(--c-bg);
+    color: var(--c-text);
+}
+
+input {
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--r);
+    color: var(--c-text);
+    padding: 0.4rem 0.6rem;
+    outline: none;
+    font: inherit;
+}
+
+input::placeholder {
+    color: var(--c-text-mute);
+}
+
+input:focus {
+    border-color: var(--c-accent);
+}
+
+/* --- interactable --- */
+.interactable {
+    cursor: pointer;
+    user-select: none;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition: opacity 0.15s;
+}
+
+.interactable:hover {
+    opacity: 0.7;
+}
+
+.interactable.pressed {
+    opacity: 0.5;
+}
+
+.interactable.active {
+    opacity: 1;
+}
+
+.interactable.focused {
+    opacity: 0.85;
+}
+
+.interactable.disabled {
+    opacity: 0.3;
+    pointer-events: none;
+}
+
+.interactable.loading {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* --- layout --- */
+#background {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+}
+
+#app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.nav {
+    display: flex;
+    gap: var(--gap);
+    align-items: center;
+    padding: 0.75rem 1.5rem;
+    background: var(--c-surface);
+    border-bottom: 1px solid var(--c-border);
+}
+
+.nav .interactable {
+    color: var(--c-text-dim);
+    text-decoration: none;
+    padding: 0.4rem 0.8rem;
+    border-radius: var(--r);
+    border: 1px solid var(--c-border);
+}
+
+.nav .router-link-active {
+    background: var(--c-accent-dim);
+    color: var(--c-accent);
+    border-color: var(--c-accent);
+}
+
+.content,
+main {
+    flex: 1;
+    padding: 1.5rem;
+    max-width: 1200px;
+    width: 100%;
+    margin: 0 auto;
+}
+
+/* model selector */
+.a_o_model {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap);
+    margin: 1rem 0;
+}
+
+.a_o_model>.interactable {
+    padding: 0.4rem 0.8rem;
+    border-radius: 999px;
+    background: var(--c-surface);
+    color: var(--c-text-dim);
+    border: 1px solid var(--c-border);
+}
+
+.a_o_model>.interactable.active {
+    background: var(--c-accent-dim);
+    color: var(--c-accent);
+    border-color: var(--c-accent);
+}
+
+/* create form */
+.o_form__create {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    padding: 0.75rem;
+    margin-top: 0.75rem;
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--r);
+}
+
+.o_form__create>div:first-child {
+    color: var(--c-text-dim);
+    font-weight: 600;
+}
+
+.a_o_input {
+    display: flex;
+    gap: var(--gap);
+    flex-wrap: wrap;
+    flex: 1;
+}
+
+.o_input_group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    flex: 1;
+    min-width: 100px;
+}
+
+.o_input_group>div:first-child {
+    font-size: 0.75rem;
+    color: var(--c-text-mute);
+}
+
+.o_form__create>.interactable {
+    padding: 0.4rem 1rem;
+    background: var(--c-accent-dim);
+    color: var(--c-accent);
+    border: 1px solid var(--c-accent);
+    border-radius: var(--r);
+    font-weight: 600;
+}
+
+/* delete all */
+.content>.interactable {
+    margin-top: 0.5rem;
+    display: inline-block;
+    padding: 0.3rem 0.8rem;
+    color: var(--c-danger);
+    border: 1px solid var(--c-border);
+    border-radius: var(--r);
+    font-size: 0.85rem;
+}
+
+/* data table (div-based) */
+.a_o_model_data_table {
+    margin-top: 1rem;
+    border: 1px solid var(--c-border);
+    border-radius: var(--r);
+    overflow: hidden;
+}
+
+.o_row {
+    display: flex;
+    border-bottom: 1px solid var(--c-border);
+}
+
+.o_row:last-child {
+    border-bottom: none;
+}
+
+.o_row__header {
+    background: var(--c-surface);
+    color: var(--c-text-dim);
+    font-weight: 600;
+}
+
+.o_row.o_instance:hover {
+    background: var(--c-surface);
+}
+
+.o_cell {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.td__actions {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.td__actions>.interactable {
+    padding: 0.2rem 0.5rem;
+    border-radius: var(--r);
+    background: var(--c-surface);
+    color: var(--c-text-dim);
+    border: 1px solid var(--c-border);
+    font-size: 0.8rem;
+}
+
+/* toast */
+.a_o_logmsg {
+    position: fixed;
+    bottom: 1rem;
+    right: 1rem;
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 0.4rem;
+    z-index: 9999;
+    pointer-events: none;
+    max-width: 340px;
+}
+
+.o_logmsg {
+    padding: 0.6rem 1rem;
+    pointer-events: auto;
+    animation: toast_in 0.25s ease;
+    border-radius: var(--r);
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+}
+
+.o_logmsg.info {
+    border-color: var(--c-info);
+    color: var(--c-info);
+}
+
+.o_logmsg.success {
+    border-color: var(--c-success);
+    color: var(--c-success);
+}
+
+.o_logmsg.warning {
+    border-color: var(--c-warning);
+    color: var(--c-warning);
+}
+
+.o_logmsg.error {
+    border-color: var(--c-danger);
+    color: var(--c-danger);
+}
+
+.o_logmsg.expired {
+    opacity: 0;
+    display: none;
+}
+
+@keyframes toast_in {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/* filebrowser */
+.o_filebrowser {
+    padding: 1rem 1.5rem;
+    max-width: 800px;
+}
+
+.o_filebrowser__path_bar {
+    display: flex;
+    align-items: center;
+    gap: var(--gap);
+    padding: 0.4rem 0.5rem;
+    margin-bottom: 0.4rem;
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--r);
+}
+
+.o_filebrowser__path_bar>.interactable {
+    padding: 0.1rem 0.5rem;
+    border-radius: var(--r);
+    border: 1px solid var(--c-border);
+    color: var(--c-text-dim);
+}
+
+.o_filebrowser__path {
+    font-size: 0.85rem;
+    color: var(--c-text-mute);
+    word-break: break-all;
+}
+
+.o_filebrowser__list {
+    border: 1px solid var(--c-border);
+    border-radius: var(--r);
+    overflow: hidden;
+}
+
+.o_fsnode {
+    display: flex;
+    align-items: center;
+    gap: var(--gap);
+    padding: 0.25rem 0.5rem;
+    border-bottom: 1px solid var(--c-border);
+}
+
+.o_fsnode:last-child {
+    border-bottom: none;
+}
+
+.o_fsnode.file {
+    color: var(--c-text-mute);
+}
+
+.o_fsnode__type {
+    font-size: 0.7rem;
+    min-width: 2rem;
+    font-family: monospace;
+    color: var(--c-text-mute);
+}
+
+/* weather station */
+.weatherstation {
+    padding: 1rem 1.5rem;
+    max-width: 1200px;
+}
+
+.weatherstation .section_title {
+    font-weight: 600;
+    color: var(--c-text-dim);
+    margin-bottom: 0.75rem;
+    font-size: 1.1rem;
+}
+
+.weatherstation__config {
+    margin-bottom: 2rem;
+}
+
+.weatherstation__config .a_o_input {
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.weatherstation__config .o_input_group {
+    max-width: 400px;
+}
+
+.weatherstation__config > .interactable {
+    display: inline-block;
+    padding: 0.4rem 1rem;
+    background: var(--c-accent-dim);
+    color: var(--c-accent);
+    border: 1px solid var(--c-accent);
+    border-radius: var(--r);
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+}
+
+.code_output {
+    margin-top: 0.5rem;
+}
+
+.code_output > .interactable {
+    display: inline-block;
+    padding: 0.3rem 0.8rem;
+    margin-bottom: 0.5rem;
+    color: var(--c-success);
+    border: 1px solid var(--c-border);
+    border-radius: var(--r);
+    font-size: 0.85rem;
+}
+
+.code_output pre {
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--r);
+    padding: 1rem;
+    overflow-x: auto;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    color: var(--c-text);
+    white-space: pre;
+}
+
+/* flash section */
+.weatherstation__flash {
+    margin-bottom: 2rem;
+}
+
+.flash_actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap);
+    margin-bottom: 0.75rem;
+}
+
+.flash_actions > .interactable {
+    padding: 0.4rem 1rem;
+    background: var(--c-surface);
+    color: var(--c-text-dim);
+    border: 1px solid var(--c-border);
+    border-radius: var(--r);
+    font-weight: 600;
+}
+
+.flash_actions > .interactable.loading {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.flash_actions > .interactable.disabled {
+    opacity: 0.3;
+    pointer-events: none;
+}
+
+.port_select {
+    display: flex;
+    align-items: center;
+    gap: var(--gap);
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+}
+
+.port_label {
+    color: var(--c-text-mute);
+    font-size: 0.85rem;
+}
+
+.port_option {
+    padding: 0.3rem 0.8rem;
+    border-radius: var(--r);
+    background: var(--c-surface);
+    color: var(--c-text-dim);
+    border: 1px solid var(--c-border);
+    font-size: 0.85rem;
+}
+
+.port_option.active {
+    background: var(--c-accent-dim);
+    color: var(--c-accent);
+    border-color: var(--c-accent);
+}
+
+.flash_log pre {
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--r);
+    padding: 0.75rem;
+    overflow-x: auto;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: var(--c-text);
+    white-space: pre-wrap;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.chart_container {
+    width: 100%;
+    height: 400px;
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--r);
+}
+
+/* mute toggle */
+.muted {
+    opacity: 0.4;
+}

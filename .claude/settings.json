@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -sL \"https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.esm.min.js\" -o /home/legion5pro/code/iot_garden/localhost/lib/echarts.esm.min.js)",
+      "Bash(/home/legion5pro/.local/bin/arduino-cli board:*)",
+      "Bash(/home/legion5pro/.local/bin/arduino-cli lib:*)"
+    ]
+  }
+}
