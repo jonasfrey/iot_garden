@@ -3,9 +3,9 @@
 // backend utility functions
 // add shared server-side helper functions here and import them where needed
 
-import { s_ds, s_root_dir } from './runtimedata.js';
+import { s_ds, s_root_dir, n_port, s_ssid, s_wifi_password } from './runtimedata.js';
 import { s_db_create, s_db_read, s_db_update, s_db_delete } from '../localhost/runtimedata.js';
-import { a_o_wsmsg, f_o_model_instance, f_s_name_table__from_o_model, o_model__o_fsnode, o_model__o_utterance, o_wsmsg__deno_copy_file, o_wsmsg__deno_mkdir, o_wsmsg__deno_stat, o_wsmsg__f_a_o_fsnode, o_wsmsg__f_delete_table_data, o_wsmsg__f_v_crud__indb, o_wsmsg__logmsg, o_wsmsg__set_state_data, o_wsmsg__syncdata, o_wsmsg__esp32_list_ports, o_wsmsg__esp32_compile, o_wsmsg__esp32_flash, o_wsmsg__esp32_install_libs } from '../localhost/constructors.js';
+import { a_o_wsmsg, f_o_model_instance, f_s_name_table__from_o_model, o_model__o_fsnode, o_model__o_utterance, o_wsmsg__deno_copy_file, o_wsmsg__deno_mkdir, o_wsmsg__deno_stat, o_wsmsg__f_a_o_fsnode, o_wsmsg__f_delete_table_data, o_wsmsg__f_v_crud__indb, o_wsmsg__logmsg, o_wsmsg__set_state_data, o_wsmsg__syncdata, o_wsmsg__esp32_list_ports, o_wsmsg__esp32_compile, o_wsmsg__esp32_flash, o_wsmsg__esp32_install_libs, o_wsmsg__esp32_get_config } from '../localhost/constructors.js';
 import { f_v_crud__indb, f_db_delete_table_data } from './database_functions.js';
 import { f_o_uttdatainfo } from './cli_functions.js';
 
@@ -193,6 +193,14 @@ o_wsmsg__esp32_flash.f_v_server_implementation = async function(o_wsmsg) {
         b_success: o_result.b_success,
         s_stdout: o_result.s_stdout,
         s_stderr: o_result.s_stderr,
+    };
+};
+
+o_wsmsg__esp32_get_config.f_v_server_implementation = function() {
+    return {
+        s_ssid: s_ssid,
+        s_password: s_wifi_password,
+        n_port: n_port,
     };
 };
 

@@ -3,7 +3,12 @@
     "allow": [
       "Bash(curl -sL \"https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.esm.min.js\" -o /home/legion5pro/code/iot_garden/localhost/lib/echarts.esm.min.js)",
       "Bash(/home/legion5pro/.local/bin/arduino-cli board:*)",
-      "Bash(/home/legion5pro/.local/bin/arduino-cli lib:*)"
+      "Bash(/home/legion5pro/.local/bin/arduino-cli lib:*)",
+      "Read(//dev/**)",
+      "Bash(stty -F /dev/ttyACM0 115200)",
+      "Bash(pkill -f \"arduino-cli monitor\")",
+      "Bash(fuser -k /dev/ttyACM0)",
+      "Bash(find /home/legion5pro/code/iot_garden -type f -name .env* -o -name *config*)"
     ]
   }
 }

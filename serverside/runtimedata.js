@@ -26,6 +26,8 @@ let s_bin__python = Deno.env.get('BIN_PYTHON') ?? 'python3';
 let s_path__venv = Deno.env.get('PATH_VENV') ?? './venv';
 
 let s_bin__glances = Deno.env.get('BIN_GLANCES') ?? 'glances';
+let s_ssid = Deno.env.get('SSID') ?? '';
+let s_wifi_password = Deno.env.get('WIFI_PASSWORD') ?? '';
 
 export {
     s_root_dir,
@@ -40,4 +42,6 @@ export {
     s_bin__python,
     s_path__venv,
     s_bin__glances,
+    s_ssid,
+    s_wifi_password,
 }

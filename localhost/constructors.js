@@ -205,6 +205,7 @@ let o_wsmsg__esp32_list_ports = f_o_wsmsg_def('esp32_list_ports', true);
 let o_wsmsg__esp32_compile = f_o_wsmsg_def('esp32_compile', true);
 let o_wsmsg__esp32_flash = f_o_wsmsg_def('esp32_flash', true);
 let o_wsmsg__esp32_install_libs = f_o_wsmsg_def('esp32_install_libs', true);
+let o_wsmsg__esp32_get_config = f_o_wsmsg_def('esp32_get_config', true);
 
 // client implementations
 o_wsmsg__logmsg.f_v_client_implementation = function(o_wsmsg, o_wsmsg__existing, o_state){
@@ -260,6 +261,7 @@ let a_o_wsmsg = [
     o_wsmsg__esp32_compile,
     o_wsmsg__esp32_flash,
     o_wsmsg__esp32_install_libs,
+    o_wsmsg__esp32_get_config,
 ]
 
 export {
@@ -300,6 +302,7 @@ export {
     o_wsmsg__esp32_compile,
     o_wsmsg__esp32_flash,
     o_wsmsg__esp32_install_libs,
+    o_wsmsg__esp32_get_config,
     f_o_wsmsg,
     f_o_wsmsg_def,
     s_o_logmsg_s_type__log,

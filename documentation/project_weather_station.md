@@ -87,19 +87,26 @@ A small simple gastro transparent PP weatherproof box with a small hole for cabl
 | USB 5V | Simplest — powered from 20000 mAh powerbank migth get low quick?|
 ---
 
-## Pin Summary
-
-| GPIO | Use | Status |
-|---|---|---|
-| 8 | I²C SDA | ✅ Safe |
-| 9 | I²C SCL | ✅ Safe |
-| 3 | (free) | ⚠️ Strapping — avoid |
-| 4,5,6,7,15–18 | Free to use | ✅ Safe |
-| 26–32 | SPI Flash | ❌ Reserved |
-
---- 
 this browser app is for setting settings which then generates a .cpp or .ino code . flashing the microcontroller then can be done via browser. 
 
 this browser app also might be running constantly on the server in the same network like the esp32. 
 eventually it will also be here for visually representing the data using echarts.esm.min.js. 
 
+
+
+---
+pin connections 
+bme280
+vcc  16
+gnd  15
+scl  7
+sda  6
+csb  5
+sdd  4
+
+BH1 750
+vcc  17
+gnd  18
+scl  8
+sca  3
+addr 46
