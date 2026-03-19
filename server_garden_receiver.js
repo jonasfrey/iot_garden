@@ -165,7 +165,7 @@ let o_t = {
     s_mon:          { s: 'Mon', s_de_ch: 'Mä' },
     s_tue:          { s: 'Tue', s_de_ch: 'Zi' },
     s_wed:          { s: 'Wed', s_de_ch: 'Mi' },
-    s_thu:          { s: 'Thu', s_de_ch: 'Du' },
+    s_thu:          { s: 'Thu', s_de_ch: 'Do' },
     s_fri:          { s: 'Fri', s_de_ch: 'Fr' },
     s_sat:          { s: 'Sat', s_de_ch: 'Sa' },
 };
