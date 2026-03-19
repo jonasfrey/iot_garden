@@ -214,8 +214,18 @@ void f_handle_root() {
     s_html += "<p>Readings stored: " + String(o_meta.n_count) + " / " + String(N_MAX_READINGS) + "</p>";
     s_html += "<p>Flash: " + String(n_used / 1024) + " / " + String(n_total / 1024) + " KB used</p>";
     s_html += "<p>Uptime: " + String(millis() / 60000) + " min</p>";
+    s_html += "<h3>Current Readings</h3>";
+    float n_t = bme.readTemperature();
+    float n_h = bme.readHumidity();
+    float n_p = bme.readPressure() / 100.0F;
+    float n_l = b_bh1750_ok ? lightMeter.readLightLevel() : -1;
+    s_html += "<p>Temperature: " + String(n_t, 1) + " &deg;C</p>";
+    s_html += "<p>Humidity: " + String(n_h, 1) + " %</p>";
+    s_html += "<p>Pressure: " + String(n_p, 1) + " hPa</p>";
+    s_html += "<p>Light: " + String(n_l, 1) + " lux</p>";
+    s_html += "<hr>";
     s_html += "<p><a href=\\"/send\\">Send data to server</a></p>";
-    s_html += "<p><a href=\\"/clear\\">Clear stored data</a></p>";
+    s_html += "<p><a href=\\"#\\" onclick=\\"if(confirm('Really clear all stored data?')) window.location='/clear'; return false;\\">Clear stored data</a></p>";
     s_html += "</body></html>";
     server.send(200, "text/html", s_html);
 }
@@ -353,14 +363,15 @@ void f_handle_send() {
     }
     file.close();
 
-    String s_html = "<html><body>";
     if (n_errors == 0) {
-        s_html += "<p>Sent " + String(n_sent) + " readings to server.</p>";
+        server.sendHeader("Location", String(S_SERVER_URL).substring(0, String(S_SERVER_URL).lastIndexOf("/api")));
+        server.send(302);
     } else {
+        String s_html = "<html><body>";
         s_html += "<p>Sent " + String(n_sent) + " readings, " + String(n_errors) + " errors.</p>";
+        s_html += "<a href=\\"/\\">Back</a></body></html>";
+        server.send(200, "text/html", s_html);
     }
-    s_html += "<a href=\\"/\\">Back</a></body></html>";
-    server.send(200, "text/html", s_html);
 }
 
 void f_handle_clear() {
