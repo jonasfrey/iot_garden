@@ -29,9 +29,11 @@ let f_handler = async function(o_request) {
             }
             let s_existing = await Deno.readTextFile(s_path_data);
             let a_o_existing = JSON.parse(s_existing);
-            a_o_existing = a_o_existing.concat(a_o_incoming);
+            let o_ts_set = new Set(a_o_existing.map(function(o) { return o.n_ts_ms; }));
+            let a_o_new = a_o_incoming.filter(function(o) { return !o_ts_set.has(o.n_ts_ms); });
+            a_o_existing = a_o_existing.concat(a_o_new);
             await Deno.writeTextFile(s_path_data, JSON.stringify(a_o_existing, null, 2));
-            let s_msg = `received ${a_o_incoming.length} readings, total ${a_o_existing.length}`;
+            let s_msg = `received ${a_o_incoming.length}, ${a_o_new.length} new, ${a_o_incoming.length - a_o_new.length} duplicates skipped, total ${a_o_existing.length}`;
             console.log(s_msg);
             return new Response(JSON.stringify({ s_msg: s_msg, n_total: a_o_existing.length }), {
                 headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },

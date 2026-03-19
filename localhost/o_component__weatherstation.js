@@ -104,7 +104,7 @@ const int N_WIFI_CHECK_INTERVAL = 10;
 const char* S_DATA_PATH = "/readings.bin";
 const char* S_META_PATH = "/meta.bin";
 const int N_MAX_READINGS = 60000;
-const char* S_SERVER_URL = "${o_config.s_server_url || 'http://192.168.1.100:8002/api/readings'}";
+const char* S_SERVER_URL = "${o_config.s_server_url || 'https://wetterstation.jonasfrey.deno.net/api/readings'}";
 const int N_BATCH_SIZE = 100;
 
 struct O_Reading {
@@ -118,9 +118,10 @@ struct O_Reading {
 struct O_Meta {
     int n_write_idx;
     int n_count;
+    int n_sent_count;
 };
 
-O_Meta o_meta = {0, 0};
+O_Meta o_meta = {0, 0, 0};
 
 ${f_s_wifi_credentials_cpp(o_config.a_o_wifi)}
 
@@ -172,7 +173,7 @@ void f_load_meta() {
         file.close();
     } else {
         if (file) file.close();
-        o_meta = {0, 0};
+        o_meta = {0, 0, 0};
     }
 }
 
@@ -249,6 +250,59 @@ void f_handle_data() {
     file.close();
 }
 
+void f_send_unsent() {
+    int n_unsent = o_meta.n_count - o_meta.n_sent_count;
+    if (n_unsent <= 0) {
+        Serial.println("No unsent readings.");
+        return;
+    }
+    File file = LittleFS.open(S_DATA_PATH, "r");
+    if (!file) return;
+
+    int n_start = (o_meta.n_count < N_MAX_READINGS) ? 0 : o_meta.n_write_idx;
+    int n_skip = o_meta.n_sent_count;
+    int n_sent = 0;
+    int n_errors = 0;
+    HTTPClient http;
+
+    while (n_sent < n_unsent) {
+        int n_batch = min(N_BATCH_SIZE, n_unsent - n_sent);
+        String s_json = "[";
+        O_Reading o_r;
+        for (int i = 0; i < n_batch; i++) {
+            int n_idx = (n_start + n_skip + n_sent + i) % N_MAX_READINGS;
+            file.seek(n_idx * sizeof(O_Reading));
+            file.read((uint8_t*)&o_r, sizeof(O_Reading));
+            if (i > 0) s_json += ",";
+            char s_buf[256];
+            snprintf(s_buf, sizeof(s_buf),
+                "{\\"n_temperature\\":%.2f,\\"n_humidity\\":%.2f,\\"n_pressure\\":%.2f,\\"n_lux\\":%.2f,\\"n_ts_ms\\":%llu}",
+                o_r.n_temperature, o_r.n_humidity, o_r.n_pressure, o_r.n_lux, o_r.n_ts_ms);
+            s_json += s_buf;
+        }
+        s_json += "]";
+
+        http.begin(S_SERVER_URL);
+        http.addHeader("Content-Type", "application/json");
+        int n_code = http.POST(s_json);
+        http.end();
+
+        if (n_code == 200) {
+            n_sent += n_batch;
+            o_meta.n_sent_count += n_batch;
+            f_save_meta();
+            Serial.printf("Auto-sent batch: %d/%d unsent\\n", n_sent, n_unsent);
+            f_led_flash(2, 30, 30);
+        } else {
+            n_errors++;
+            Serial.printf("Auto-send POST failed: HTTP %d\\n", n_code);
+            if (n_errors >= 3) break;
+        }
+    }
+    file.close();
+    Serial.printf("Auto-send complete: %d sent, %d errors\\n", n_sent, n_errors);
+}
+
 void f_handle_send() {
     if (o_meta.n_count == 0) {
         server.send(200, "text/html", "<html><body><p>No data to send.</p><a href=\\"/\\">Back</a></body></html>");
@@ -312,7 +366,7 @@ void f_handle_send() {
 void f_handle_clear() {
     LittleFS.remove(S_DATA_PATH);
     LittleFS.remove(S_META_PATH);
-    o_meta = {0, 0};
+    o_meta = {0, 0, 0};
     server.send(200, "text/html", "<html><body><p>Data cleared.</p><a href=\\"/\\">Back</a></body></html>");
 }
 
@@ -368,6 +422,7 @@ void loop() {
             if (!b_ntp_synced) {
                 f_sync_ntp();
             }
+            f_send_unsent();
             if (!b_serving) {
                 server.begin();
                 b_serving = true;
@@ -670,7 +725,7 @@ let o_component__weatherstation = {
             o_state: o_state,
             o_config: {
                 a_o_wifi: [{ s_ssid: '', s_password: '' }],
-                s_server_url: 'http://192.168.1.100:8002/api/readings',
+                s_server_url: 'https://wetterstation.jonasfrey.deno.net/api/readings',
                 n_interval_s: 2,
                 n_battery_mah: 6600,
             },
