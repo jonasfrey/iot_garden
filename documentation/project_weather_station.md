@@ -84,7 +84,7 @@ A small simple gastro transparent PP weatherproof box with a small hole for cabl
 
 | Option | Notes |
 |---|---|
-| USB 5V | Simplest — powered from 20000 mAh powerbank migth get low quick?|
+| 2x 3300 mAh lithium battery | 6600 mAh total, direct power — no auto-shutoff issues |
 ---
 
 this browser app is for setting settings which then generates a .cpp or .ino code . flashing the microcontroller then can be done via browser. 

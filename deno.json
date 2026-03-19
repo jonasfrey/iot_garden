@@ -17,7 +17,8 @@
     "stop": "pkill -f 'deno run.*websersocket_21cdb891-4219-468a-b8aa-4d018930375d.js' || echo 'No running websersocket process found.'",
     "restart": "deno task stop && deno task run",
     "test": "deno test --allow-net --allow-read --allow-write --allow-env --allow-ffi serverside/function_testings.js",
-    "uninit": "deno run --allow-read --allow-write --allow-env --env serverside/uninit.js"
+    "uninit": "deno run --allow-read --allow-write --allow-env --env serverside/uninit.js",
+    "garden": "deno run --allow-net --allow-read --allow-write server_garden_receiver.js"
   },
   "imports": {
     "@apn/websersocketgui/constructors_framework": "./localhost/constructors_framework.js",

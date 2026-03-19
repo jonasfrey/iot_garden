@@ -21,247 +21,76 @@ import {
 
 let s_name_table = f_s_name_table__from_o_model(o_model__o_weatherreading);
 
-let f_s_ino_code = function(o_config) {
-    let s_read_and_send = `
-    // Read sensors
-    float n_temperature = bme.readTemperature();
-    float n_humidity    = bme.readHumidity();
-    float n_pressure    = bme.readPressure() / 100.0F;
-    float n_lux         = lightMeter.readLightLevel();
-
-    Serial.printf("T=%.1f°C  H=%.1f%%  P=%.1fhPa  L=%.1flux\\n",
-                  n_temperature, n_humidity, n_pressure, n_lux);
-
-    if (WiFi.status() == WL_CONNECTED) {
-        HTTPClient http;
-        http.begin(S_SERVER);
-        http.addHeader("Content-Type", "application/json");
-
-        char s_json[256];
-        snprintf(s_json, sizeof(s_json),
-            "{\\"n_temperature\\":%.2f,\\"n_humidity\\":%.2f,\\"n_pressure\\":%.2f,\\"n_lux\\":%.2f}",
-            n_temperature, n_humidity, n_pressure, n_lux);
-
-        int n_code = http.POST(s_json);
-        Serial.printf("HTTP %d\\n", n_code);
-        http.end();
-    } else {
-        Serial.println("WiFi disconnected, skipping upload.");
-    }`;
-
-    if (o_config.b_deep_sleep) {
-        let s_spike = '';
-        if (o_config.b_powerbank_keepalive) {
-            s_spike = `
-// Power bank keep-alive: stay awake with WiFi between readings
-// instead of deep sleep, use delay loop with periodic WiFi spikes
-const int N_SPIKE_INTERVAL_S = ${o_config.n_spike_interval_s || 30};
-
-void f_spike_current() {
-    // WiFi TX draws ~200-500mA — enough to keep any power bank alive
-    Serial.println("Spike: keeping power bank alive");
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(S_SSID, S_PASSWORD);
-    delay(2000);
-    WiFi.disconnect(true);
-    WiFi.mode(WIFI_OFF);
-}`;
-        }
-
-        let s_sleep_block = '';
-        if (o_config.b_powerbank_keepalive) {
-            s_sleep_block = `
-    // Power bank mode: stay awake, spike current every ${o_config.n_spike_interval_s || 30}s
-    WiFi.disconnect(true);
-    WiFi.mode(WIFI_OFF);
-    Serial.println("Waiting (power bank keep-alive mode)...");
-    Serial.flush();
-    unsigned long n_wait_start = millis();
-    unsigned long n_last_spike = millis();
-    while ((millis() - n_wait_start) < (N_SLEEP_US / 1000)) {
-        if ((millis() - n_last_spike) >= (N_SPIKE_INTERVAL_S * 1000UL)) {
-            f_spike_current();
-            n_last_spike = millis();
-        }
-        delay(100);
-    }
-    ESP.restart();`;
-        } else {
-            s_sleep_block = `
-    esp_sleep_enable_timer_wakeup(N_SLEEP_US);
-    Serial.println("Entering deep sleep...");
-    Serial.flush();
-    esp_deep_sleep_start();`;
-        }
-
-        return `// ESP32-S3 Weather Station — auto-generated
-// WiFi: ${o_config.s_ssid}  |  Server: ${o_config.s_server_ip}:${o_config.n_port}
-// Interval: ${o_config.n_interval_s}s  |  Deep sleep: ${o_config.b_powerbank_keepalive ? 'no (power bank mode)' : 'yes'}
-
-#include <WiFi.h>
-#include <HTTPClient.h>
-#include <Wire.h>
-#include <Adafruit_BME280.h>
-#include <BH1750.h>
-
-const char* S_SSID     = "${o_config.s_ssid}";
-const char* S_PASSWORD = "${o_config.s_password}";
-const char* S_SERVER   = "http://${o_config.s_server_ip}:${o_config.n_port}/api/weatherreading";
-
-// BME280 I2C bus (SDA=6, SCL=7)
-const int N_SDA_BME = 6;
-const int N_SCL_BME = 7;
-// BH1750 I2C bus (SDA=3, SCL=8)
-const int N_SDA_BH = 3;
-const int N_SCL_BH = 8;
-
-const uint64_t N_SLEEP_US = ${o_config.n_interval_s}000000ULL;
-
-TwoWire WireBME = TwoWire(0);
-TwoWire WireBH  = TwoWire(1);
-
-Adafruit_BME280 bme;
-BH1750 lightMeter;
-${s_spike}
-
-void setup() {
-    Serial.begin(115200);
-    WireBME.begin(N_SDA_BME, N_SCL_BME);
-    WireBH.begin(N_SDA_BH, N_SCL_BH);
-
-    uint8_t n_bme_addr = 0x76;
-    if (!bme.begin(n_bme_addr, &WireBME)) {
-        n_bme_addr = 0x77;
-        if (!bme.begin(n_bme_addr, &WireBME)) {
-            Serial.printf("BME280 not found (scanned 0x76, 0x77)\\n");
-            while (1) delay(1000);
-        }
-    }
-    Serial.printf("BME280 found at 0x%02X\\n", n_bme_addr);
-
-    if (!lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE, 0x23, &WireBH)) {
-        Serial.println("BH1750 not found!");
-        while (1) delay(1000);
-    }
-
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(S_SSID, S_PASSWORD);
-    Serial.print("Connecting to WiFi");
-    int n_attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && n_attempts < 40) {
-        delay(500);
-        Serial.print(".");
-        n_attempts++;
-    }
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.println(" connected!");
-        Serial.println(WiFi.localIP());
-    } else {
-        Serial.println(" failed!");
-    }
-${s_read_and_send}
-${s_sleep_block}
-}
-
-void loop() {
-    // Never reached — restarts via deep sleep or ESP.restart()
-}
-`;
-    } else {
-        return `// ESP32-S3 Weather Station — auto-generated
-// WiFi: ${o_config.s_ssid}  |  Server: ${o_config.s_server_ip}:${o_config.n_port}
-// Interval: ${o_config.n_interval_s}s  |  Deep sleep: no
-
-#include <WiFi.h>
-#include <HTTPClient.h>
-#include <Wire.h>
-#include <Adafruit_BME280.h>
-#include <BH1750.h>
-
-const char* S_SSID     = "${o_config.s_ssid}";
-const char* S_PASSWORD = "${o_config.s_password}";
-const char* S_SERVER   = "http://${o_config.s_server_ip}:${o_config.n_port}/api/weatherreading";
-
-// BME280 I2C bus (SDA=6, SCL=7)
-const int N_SDA_BME = 6;
-const int N_SCL_BME = 7;
-// BH1750 I2C bus (SDA=3, SCL=8)
-const int N_SDA_BH = 3;
-const int N_SCL_BH = 8;
-
-const unsigned long N_INTERVAL_MS = ${o_config.n_interval_s * 1000}UL;
-
-TwoWire WireBME = TwoWire(0);
-TwoWire WireBH  = TwoWire(1);
-
-Adafruit_BME280 bme;
-BH1750 lightMeter;
-
-void setup() {
-    Serial.begin(115200);
-    WireBME.begin(N_SDA_BME, N_SCL_BME);
-    WireBH.begin(N_SDA_BH, N_SCL_BH);
-
-    uint8_t n_bme_addr = 0x76;
-    if (!bme.begin(n_bme_addr, &WireBME)) {
-        n_bme_addr = 0x77;
-        if (!bme.begin(n_bme_addr, &WireBME)) {
-            Serial.printf("BME280 not found (scanned 0x76, 0x77)\\n");
-            while (1) delay(1000);
-        }
-    }
-    Serial.printf("BME280 found at 0x%02X\\n", n_bme_addr);
-
-    if (!lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE, 0x23, &WireBH)) {
-        Serial.println("BH1750 not found!");
-        while (1) delay(1000);
-    }
-
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(S_SSID, S_PASSWORD);
-    Serial.print("Connecting to WiFi");
-    int n_attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && n_attempts < 40) {
-        delay(500);
-        Serial.print(".");
-        n_attempts++;
-    }
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.println(" connected!");
-        Serial.println(WiFi.localIP());
-    } else {
-        Serial.println(" failed!");
-    }
-}
-
-void loop() {
-${s_read_and_send}
-
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("Reconnecting WiFi...");
-        WiFi.begin(S_SSID, S_PASSWORD);
-    }
-
-    delay(N_INTERVAL_MS);
-}
-`;
-    }
+let f_s_wifi_credentials_cpp = function(a_o_wifi) {
+    let s_entries = a_o_wifi
+        .filter(function(o) { return o.s_ssid; })
+        .map(function(o) { return `    {"${o.s_ssid}", "${o.s_password}"}`; })
+        .join(',\n');
+    return `
+struct O_Wifi {
+    const char* s_ssid;
+    const char* s_password;
 };
 
+const O_Wifi A_O_WIFI[] = {
+${s_entries}
+};
+const int N_WIFI_COUNT = sizeof(A_O_WIFI) / sizeof(A_O_WIFI[0]);
+
+bool f_try_connect_wifi() {
+    WiFi.mode(WIFI_STA);
+    for (int i = 0; i < N_WIFI_COUNT; i++) {
+        Serial.printf("Trying WiFi: %s\\n", A_O_WIFI[i].s_ssid);
+        WiFi.begin(A_O_WIFI[i].s_ssid, A_O_WIFI[i].s_password);
+        int n_attempts = 0;
+        while (WiFi.status() != WL_CONNECTED && n_attempts < 20) {
+            f_led_flash(5, 30, 30);
+            delay(200);
+            Serial.print(".");
+            n_attempts++;
+        }
+        if (WiFi.status() == WL_CONNECTED) {
+            Serial.printf("\\nConnected to %s, IP: %s\\n", A_O_WIFI[i].s_ssid, WiFi.localIP().toString().c_str());
+            return true;
+        }
+        WiFi.disconnect(true);
+        Serial.println(" failed");
+    }
+    return false;
+}`;
+};
+
+let f_s_wifi_header_comment = function(a_o_wifi) {
+    return a_o_wifi
+        .filter(function(o) { return o.s_ssid; })
+        .map(function(o) { return o.s_ssid; })
+        .join(', ');
+};
 
 let f_s_ino_code__garden = function(o_config) {
     return `// ESP32-S3 Garden Mode — auto-generated
-// Stores readings in RAM, serves JSON when phone hotspot is available
-// WiFi: ${o_config.s_ssid}  |  Interval: ${o_config.n_interval_s}s
+// Stores readings to LittleFS flash (ring buffer), serves JSON when hotspot available
+// WiFi: ${f_s_wifi_header_comment(o_config.a_o_wifi)}  |  Interval: ${o_config.n_interval_s}s
 
 #include <WiFi.h>
 #include <WebServer.h>
+#include <HTTPClient.h>
 #include <Wire.h>
 #include <Adafruit_BME280.h>
 #include <BH1750.h>
+#include <time.h>
+#include <LittleFS.h>
 
-const char* S_SSID     = "${o_config.s_ssid}";
-const char* S_PASSWORD = "${o_config.s_password}";
+const int N_PIN_LED = 2;
+
+void f_led_flash(int n_count, int n_on_ms, int n_off_ms) {
+    for (int i = 0; i < n_count; i++) {
+        digitalWrite(N_PIN_LED, HIGH);
+        delay(n_on_ms);
+        digitalWrite(N_PIN_LED, LOW);
+        if (i < n_count - 1) delay(n_off_ms);
+    }
+}
 
 // BME280 I2C bus (SDA=6, SCL=7)
 const int N_SDA_BME = 6;
@@ -271,21 +100,29 @@ const int N_SDA_BH = 3;
 const int N_SCL_BH = 8;
 
 const unsigned long N_INTERVAL_MS = ${o_config.n_interval_s * 1000}UL;
-const int N_WIFI_TIMEOUT_MS = 5000;
 const int N_WIFI_CHECK_INTERVAL = 10;
-const unsigned long N_SPIKE_INTERVAL_MS = ${(o_config.n_spike_interval_s || 30) * 1000}UL;
+const char* S_DATA_PATH = "/readings.bin";
+const char* S_META_PATH = "/meta.bin";
+const int N_MAX_READINGS = 60000;
+const char* S_SERVER_URL = "${o_config.s_server_url || 'http://192.168.1.100:8002/api/readings'}";
+const int N_BATCH_SIZE = 100;
 
 struct O_Reading {
     float n_temperature;
     float n_humidity;
     float n_pressure;
     float n_lux;
-    unsigned long n_ms;
+    unsigned long long n_ts_ms;
 };
 
-const int N_MAX_READINGS = 10000;
-O_Reading a_o_reading[N_MAX_READINGS];
-int n_reading_count = 0;
+struct O_Meta {
+    int n_write_idx;
+    int n_count;
+};
+
+O_Meta o_meta = {0, 0};
+
+${f_s_wifi_credentials_cpp(o_config.a_o_wifi)}
 
 TwoWire WireBME = TwoWire(0);
 TwoWire WireBH  = TwoWire(1);
@@ -295,60 +132,203 @@ BH1750 lightMeter;
 WebServer server(80);
 bool b_bh1750_ok = false;
 bool b_serving = false;
+bool b_ntp_synced = false;
+
+unsigned long long f_n_ts_ms_utc() {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (unsigned long long)tv.tv_sec * 1000ULL + tv.tv_usec / 1000ULL;
+}
+
+void f_sync_ntp() {
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+    Serial.print("NTP sync");
+    int n_tries = 0;
+    while (time(NULL) < 1000000000 && n_tries < 20) {
+        delay(500);
+        Serial.print(".");
+        n_tries++;
+    }
+    if (time(NULL) >= 1000000000) {
+        Serial.printf(" ok (UTC %llu)\\n", f_n_ts_ms_utc());
+        b_ntp_synced = true;
+    } else {
+        Serial.println(" failed!");
+    }
+}
+
+void f_save_meta() {
+    File file = LittleFS.open(S_META_PATH, "w");
+    if (file) {
+        file.write((uint8_t*)&o_meta, sizeof(O_Meta));
+        file.close();
+    }
+}
+
+void f_load_meta() {
+    File file = LittleFS.open(S_META_PATH, "r");
+    if (file && file.size() == sizeof(O_Meta)) {
+        file.read((uint8_t*)&o_meta, sizeof(O_Meta));
+        file.close();
+    } else {
+        if (file) file.close();
+        o_meta = {0, 0};
+    }
+}
 
 void f_take_reading() {
-    if (n_reading_count >= N_MAX_READINGS) {
-        Serial.println("Storage full!");
-        return;
-    }
     O_Reading o_r;
     o_r.n_temperature = bme.readTemperature();
     o_r.n_humidity    = bme.readHumidity();
     o_r.n_pressure    = bme.readPressure() / 100.0F;
     o_r.n_lux         = b_bh1750_ok ? lightMeter.readLightLevel() : -1;
-    o_r.n_ms          = millis();
-    a_o_reading[n_reading_count] = o_r;
-    n_reading_count++;
+    o_r.n_ts_ms       = b_ntp_synced ? f_n_ts_ms_utc() : millis();
+
+    File file = LittleFS.open(S_DATA_PATH, "r+");
+    if (!file) {
+        file = LittleFS.open(S_DATA_PATH, "w");
+    }
+    if (!file) {
+        Serial.println("Failed to open data file!");
+        return;
+    }
+    file.seek(o_meta.n_write_idx * sizeof(O_Reading));
+    file.write((uint8_t*)&o_r, sizeof(O_Reading));
+    file.close();
+
+    o_meta.n_write_idx = (o_meta.n_write_idx + 1) % N_MAX_READINGS;
+    if (o_meta.n_count < N_MAX_READINGS) o_meta.n_count++;
+    f_save_meta();
+
     Serial.printf("Reading %d: T=%.1f°C  H=%.1f%%  P=%.1fhPa  L=%.1flux\\n",
-                  n_reading_count, o_r.n_temperature, o_r.n_humidity, o_r.n_pressure, o_r.n_lux);
+                  o_meta.n_count, o_r.n_temperature, o_r.n_humidity, o_r.n_pressure, o_r.n_lux);
+    f_led_flash(1, 50, 0);
 }
 
 void f_handle_root() {
+    size_t n_total = LittleFS.totalBytes();
+    size_t n_used = LittleFS.usedBytes();
     String s_html = "<html><head><title>Garden Station</title></head><body>";
     s_html += "<h2>Garden Weather Station</h2>";
-    s_html += "<p>Readings stored: " + String(n_reading_count) + " / " + String(N_MAX_READINGS) + "</p>";
+    s_html += "<p>Readings stored: " + String(o_meta.n_count) + " / " + String(N_MAX_READINGS) + "</p>";
+    s_html += "<p>Flash: " + String(n_used / 1024) + " / " + String(n_total / 1024) + " KB used</p>";
     s_html += "<p>Uptime: " + String(millis() / 60000) + " min</p>";
-    s_html += "<p><a href=\\"/data\\">Download JSON</a></p>";
+    s_html += "<p><a href=\\"/send\\">Send data to server</a></p>";
     s_html += "<p><a href=\\"/clear\\">Clear stored data</a></p>";
     s_html += "</body></html>";
     server.send(200, "text/html", s_html);
 }
 
 void f_handle_data() {
-    String s_json = "[";
-    for (int i = 0; i < n_reading_count; i++) {
-        if (i > 0) s_json += ",";
-        s_json += "{\\"n_temperature\\":" + String(a_o_reading[i].n_temperature, 2);
-        s_json += ",\\"n_humidity\\":" + String(a_o_reading[i].n_humidity, 2);
-        s_json += ",\\"n_pressure\\":" + String(a_o_reading[i].n_pressure, 2);
-        s_json += ",\\"n_lux\\":" + String(a_o_reading[i].n_lux, 2);
-        s_json += ",\\"n_ms\\":" + String(a_o_reading[i].n_ms);
-        s_json += "}";
+    File file = LittleFS.open(S_DATA_PATH, "r");
+    if (!file || o_meta.n_count == 0) {
+        if (file) file.close();
+        server.send(200, "application/json", "[]");
+        return;
     }
-    s_json += "]";
     server.sendHeader("Content-Disposition", "attachment; filename=\\"garden_data.json\\"");
-    server.send(200, "application/json", s_json);
+    server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+    server.send(200, "application/json", "");
+    server.sendContent("[");
+
+    // read oldest to newest
+    int n_start = (o_meta.n_count < N_MAX_READINGS) ? 0 : o_meta.n_write_idx;
+    O_Reading o_r;
+    for (int i = 0; i < o_meta.n_count; i++) {
+        int n_idx = (n_start + i) % N_MAX_READINGS;
+        file.seek(n_idx * sizeof(O_Reading));
+        if (file.read((uint8_t*)&o_r, sizeof(O_Reading)) != sizeof(O_Reading)) break;
+        if (i > 0) server.sendContent(",");
+        char s_buf[256];
+        snprintf(s_buf, sizeof(s_buf),
+            "{\\"n_temperature\\":%.2f,\\"n_humidity\\":%.2f,\\"n_pressure\\":%.2f,\\"n_lux\\":%.2f,\\"n_ts_ms\\":%llu}",
+            o_r.n_temperature, o_r.n_humidity, o_r.n_pressure, o_r.n_lux, o_r.n_ts_ms);
+        server.sendContent(s_buf);
+    }
+    server.sendContent("]");
+    file.close();
+}
+
+void f_handle_send() {
+    if (o_meta.n_count == 0) {
+        server.send(200, "text/html", "<html><body><p>No data to send.</p><a href=\\"/\\">Back</a></body></html>");
+        return;
+    }
+    File file = LittleFS.open(S_DATA_PATH, "r");
+    if (!file) {
+        server.send(500, "text/html", "<html><body><p>Failed to open data file.</p><a href=\\"/\\">Back</a></body></html>");
+        return;
+    }
+
+    int n_start = (o_meta.n_count < N_MAX_READINGS) ? 0 : o_meta.n_write_idx;
+    int n_sent = 0;
+    int n_errors = 0;
+    HTTPClient http;
+
+    while (n_sent < o_meta.n_count) {
+        int n_batch = min(N_BATCH_SIZE, o_meta.n_count - n_sent);
+        String s_json = "[";
+        O_Reading o_r;
+        for (int i = 0; i < n_batch; i++) {
+            int n_idx = (n_start + n_sent + i) % N_MAX_READINGS;
+            file.seek(n_idx * sizeof(O_Reading));
+            file.read((uint8_t*)&o_r, sizeof(O_Reading));
+            if (i > 0) s_json += ",";
+            char s_buf[256];
+            snprintf(s_buf, sizeof(s_buf),
+                "{\\"n_temperature\\":%.2f,\\"n_humidity\\":%.2f,\\"n_pressure\\":%.2f,\\"n_lux\\":%.2f,\\"n_ts_ms\\":%llu}",
+                o_r.n_temperature, o_r.n_humidity, o_r.n_pressure, o_r.n_lux, o_r.n_ts_ms);
+            s_json += s_buf;
+        }
+        s_json += "]";
+
+        http.begin(S_SERVER_URL);
+        http.addHeader("Content-Type", "application/json");
+        int n_code = http.POST(s_json);
+        http.end();
+
+        if (n_code == 200) {
+            n_sent += n_batch;
+            Serial.printf("Sent batch: %d/%d\\n", n_sent, o_meta.n_count);
+            f_led_flash(2, 30, 30);
+        } else {
+            n_errors++;
+            Serial.printf("POST failed: HTTP %d\\n", n_code);
+            if (n_errors >= 3) break;
+        }
+    }
+    file.close();
+
+    String s_html = "<html><body>";
+    if (n_errors == 0) {
+        s_html += "<p>Sent " + String(n_sent) + " readings to server.</p>";
+    } else {
+        s_html += "<p>Sent " + String(n_sent) + " readings, " + String(n_errors) + " errors.</p>";
+    }
+    s_html += "<a href=\\"/\\">Back</a></body></html>";
+    server.send(200, "text/html", s_html);
 }
 
 void f_handle_clear() {
-    n_reading_count = 0;
+    LittleFS.remove(S_DATA_PATH);
+    LittleFS.remove(S_META_PATH);
+    o_meta = {0, 0};
     server.send(200, "text/html", "<html><body><p>Data cleared.</p><a href=\\"/\\">Back</a></body></html>");
 }
 
 void setup() {
     Serial.begin(115200);
+    pinMode(N_PIN_LED, OUTPUT);
     delay(1000);
     Serial.println("\\n=== Garden Weather Station ===");
+
+    if (!LittleFS.begin(true)) {
+        Serial.println("LittleFS mount failed!");
+        while (1) delay(1000);
+    }
+    f_load_meta();
+    Serial.printf("Flash: %u / %u KB used, existing readings: %d\\n",
+                  LittleFS.usedBytes() / 1024, LittleFS.totalBytes() / 1024, o_meta.n_count);
 
     WireBME.begin(N_SDA_BME, N_SCL_BME);
     WireBH.begin(N_SDA_BH, N_SCL_BH);
@@ -373,6 +353,7 @@ void setup() {
 
     server.on("/", f_handle_root);
     server.on("/data", f_handle_data);
+    server.on("/send", f_handle_send);
     server.on("/clear", f_handle_clear);
 
     Serial.printf("Interval: %lums, max readings: %d\\n", N_INTERVAL_MS, N_MAX_READINGS);
@@ -381,16 +362,12 @@ void setup() {
 void loop() {
     f_take_reading();
 
-    // Try connecting to hotspot
+    // Try connecting to any known hotspot
     if (WiFi.status() != WL_CONNECTED) {
-        WiFi.begin(S_SSID, S_PASSWORD);
-        unsigned long n_start = millis();
-        while (WiFi.status() != WL_CONNECTED && (millis() - n_start) < N_WIFI_TIMEOUT_MS) {
-            delay(250);
-        }
-
-        if (WiFi.status() == WL_CONNECTED) {
-            Serial.printf("Hotspot connected! IP: %s\\n", WiFi.localIP().toString().c_str());
+        if (f_try_connect_wifi()) {
+            if (!b_ntp_synced) {
+                f_sync_ntp();
+            }
             if (!b_serving) {
                 server.begin();
                 b_serving = true;
@@ -409,16 +386,7 @@ void loop() {
             server.stop();
             b_serving = false;
             WiFi.disconnect(true);
-        } else {
-            WiFi.disconnect(true);
         }
-    }
-
-    // Keep WiFi attempting connection to maintain current draw (~80-120mA)
-    // This prevents power bank auto-shutoff
-    if (WiFi.status() != WL_CONNECTED) {
-        WiFi.mode(WIFI_STA);
-        WiFi.begin(S_SSID, S_PASSWORD);
     }
 
     delay(N_INTERVAL_MS);
@@ -470,31 +438,17 @@ void loop() {
 let f_s_ino_code__wifi_test = function(o_config) {
     return `// ESP32-S3 WiFi Connection Test — auto-generated
 #include <WiFi.h>
-
-const char* S_SSID     = "${o_config.s_ssid}";
-const char* S_PASSWORD = "${o_config.s_password}";
+${f_s_wifi_credentials_cpp(o_config.a_o_wifi)}
 
 void setup() {
     Serial.begin(115200);
     delay(1000);
     Serial.println("\\n=== WiFi Test ===");
-    Serial.printf("Connecting to: '%s'\\n", S_SSID);
 
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(S_SSID, S_PASSWORD);
-
-    int n_attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && n_attempts < 40) {
-        delay(500);
-        Serial.printf(".");
-        n_attempts++;
-    }
-
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.printf("\\nConnected! IP: %s\\n", WiFi.localIP().toString().c_str());
+    if (f_try_connect_wifi()) {
         Serial.printf("Signal strength: %d dBm\\n", WiFi.RSSI());
     } else {
-        Serial.printf("\\nFailed! Status: %d\\n", WiFi.status());
+        Serial.printf("Failed! Status: %d\\n", WiFi.status());
         Serial.println("3=disconnected, 4=connect_failed, 6=wrong_password, 7=no_ssid_avail");
     }
 }
@@ -527,78 +481,63 @@ let o_component__weatherstation = {
                             {
                                 class: "o_input_group",
                                 a_o: [
-                                    { s_tag: "div", innerText: "WiFi SSID" },
-                                    { s_tag: "input", type: "text", 'v-model': "o_config.s_ssid", placeholder: "MyNetwork" },
+                                    { s_tag: "div", innerText: "WiFi Networks" },
+                                    {
+                                        s_tag: "div",
+                                        'v-for': "(o_wifi, n_idx) in o_config.a_o_wifi",
+                                        class: "wifi_entry",
+                                        a_o: [
+                                            { s_tag: "input", type: "text", 'v-model': "o_wifi.s_ssid", placeholder: "SSID" },
+                                            { s_tag: "input", type: "password", 'v-model': "o_wifi.s_password", placeholder: "password" },
+                                            {
+                                                s_tag: "span",
+                                                class: "interactable",
+                                                'v-if': "o_config.a_o_wifi.length > 1",
+                                                'v-on:click': "o_config.a_o_wifi.splice(n_idx, 1)",
+                                                innerText: "x",
+                                            },
+                                        ]
+                                    },
+                                    {
+                                        s_tag: "div",
+                                        class: "interactable",
+                                        'v-on:click': "o_config.a_o_wifi.push({ s_ssid: '', s_password: '' })",
+                                        innerText: "+ Add WiFi network",
+                                    },
                                 ]
                             },
                             {
                                 class: "o_input_group",
                                 a_o: [
-                                    { s_tag: "div", innerText: "WiFi Password" },
-                                    { s_tag: "input", type: "password", 'v-model': "o_config.s_password", placeholder: "password" },
-                                ]
-                            },
-                            {
-                                class: "o_input_group",
-                                a_o: [
-                                    { s_tag: "div", innerText: "Server IP" },
-                                    { s_tag: "input", type: "text", 'v-model': "o_config.s_server_ip", placeholder: "192.168.1.100" },
-                                ]
-                            },
-                            {
-                                class: "o_input_group",
-                                a_o: [
-                                    { s_tag: "div", innerText: "Server Port" },
-                                    { s_tag: "input", type: "number", 'v-model.number': "o_config.n_port", placeholder: "8000" },
+                                    { s_tag: "div", innerText: "Server URL (receive readings)" },
+                                    { s_tag: "input", type: "text", 'v-model': "o_config.s_server_url", placeholder: "http://192.168.1.100:8002/api/readings" },
                                 ]
                             },
                             {
                                 class: "o_input_group",
                                 a_o: [
                                     { s_tag: "div", innerText: "Reading Interval (seconds)" },
-                                    { s_tag: "input", type: "number", 'v-model.number': "o_config.n_interval_s", placeholder: "60" },
+                                    { s_tag: "input", type: "number", 'v-model.number': "o_config.n_interval_s", placeholder: "2" },
                                 ]
                             },
                             {
                                 class: "o_input_group",
                                 a_o: [
-                                    { s_tag: "label", a_o: [
-                                        { s_tag: "input", type: "checkbox", 'v-model': "o_config.b_deep_sleep" },
-                                        { s_tag: "span", innerText: " Deep sleep between readings (battery-friendly)" },
-                                    ]},
+                                    { s_tag: "div", innerText: "Battery capacity (mAh)" },
+                                    { s_tag: "input", type: "number", 'v-model.number': "o_config.n_battery_mah", placeholder: "6600" },
                                 ]
                             },
                             {
-                                class: "o_input_group",
-                                'v-if': "o_config.b_deep_sleep",
-                                a_o: [
-                                    { s_tag: "label", a_o: [
-                                        { s_tag: "input", type: "checkbox", 'v-model': "o_config.b_powerbank_keepalive" },
-                                        { s_tag: "span", innerText: " Power bank keep-alive (spike current to prevent auto-shutoff)" },
-                                    ]},
-                                ]
-                            },
-                            {
-                                class: "o_input_group",
-                                'v-if': "o_config.b_deep_sleep && o_config.b_powerbank_keepalive",
-                                a_o: [
-                                    { s_tag: "div", innerText: "Spike interval (seconds)" },
-                                    { s_tag: "input", type: "number", 'v-model.number': "o_config.n_spike_interval_s", placeholder: "30" },
-                                ]
+                                s_tag: "div",
+                                innerText: "{{ s_runtime_estimate }}",
                             },
                         ]
                     },
                     {
                         s_tag: "div",
                         class: "interactable",
-                        'v-on:click': "f_generate_code",
-                        innerText: "Generate .ino Code",
-                    },
-                    {
-                        s_tag: "div",
-                        class: "interactable",
                         'v-on:click': "f_generate_code__garden",
-                        innerText: "Generate .ino (garden mode)",
+                        innerText: "Generate .ino Code",
                     },
                     {
                         s_tag: "div",
@@ -730,14 +669,10 @@ let o_component__weatherstation = {
         return {
             o_state: o_state,
             o_config: {
-                s_ssid: '',
-                s_password: '',
-                s_server_ip: '',
-                n_port: 8000,
-                n_interval_s: 60,
-                b_deep_sleep: true,
-                b_powerbank_keepalive: false,
-                n_spike_interval_s: 30,
+                a_o_wifi: [{ s_ssid: '', s_password: '' }],
+                s_server_url: 'http://192.168.1.100:8002/api/readings',
+                n_interval_s: 2,
+                n_battery_mah: 6600,
             },
             s_code: '',
             s_copied: false,
@@ -756,6 +691,20 @@ let o_component__weatherstation = {
         a_o_weatherreading: function() {
             return o_state[s_name_table] || [];
         },
+        s_runtime_estimate: function() {
+            let n_mah = this.o_config.n_battery_mah || 0;
+            if (n_mah <= 0) return 'Enter battery capacity to estimate runtime';
+            // garden mode: always on, ~80 mA idle, periodic WiFi attempts ~250 mA for ~10s per cycle
+            let n_cycle_s = this.o_config.n_interval_s || 60;
+            let n_wifi_attempt_s = 10;
+            let n_avg_ma = (n_wifi_attempt_s * 250 + (n_cycle_s - n_wifi_attempt_s) * 80) / n_cycle_s;
+            let n_hours = n_mah / n_avg_ma;
+            if (n_hours < 24) return 'Est. runtime: ~' + Math.round(n_hours) + ' hours (' + n_avg_ma.toFixed(0) + ' mA avg)';
+            let n_days = n_hours / 24;
+            if (n_days < 365) return 'Est. runtime: ~' + Math.round(n_days) + ' days (' + n_avg_ma.toFixed(0) + ' mA avg)';
+            let n_years = n_days / 365;
+            return 'Est. runtime: ~' + n_years.toFixed(1) + ' years (' + n_avg_ma.toFixed(0) + ' mA avg)';
+        },
     },
     watch: {
         a_o_weatherreading: {
@@ -766,10 +715,6 @@ let o_component__weatherstation = {
         },
     },
     methods: {
-        f_generate_code: function() {
-            this.s_code = f_s_ino_code(this.o_config);
-            this.b_compiled = false;
-        },
         f_generate_code__garden: function() {
             this.s_code = f_s_ino_code__garden(this.o_config);
             this.b_compiled = false;
@@ -915,9 +860,12 @@ let o_component__weatherstation = {
         ).then(function(o_resp) {
             if (o_resp.v_result) {
                 let o_r = o_resp.v_result;
-                if (o_r.s_ssid && !o_self.o_config.s_ssid) o_self.o_config.s_ssid = o_r.s_ssid;
-                if (o_r.s_password && !o_self.o_config.s_password) o_self.o_config.s_password = o_r.s_password;
-                if (o_r.n_port && !o_self.o_config.n_port) o_self.o_config.n_port = o_r.n_port;
+                if (o_r.s_ssid && !o_self.o_config.a_o_wifi[0].s_ssid) {
+                    o_self.o_config.a_o_wifi[0].s_ssid = o_r.s_ssid;
+                }
+                if (o_r.s_password && !o_self.o_config.a_o_wifi[0].s_password) {
+                    o_self.o_config.a_o_wifi[0].s_password = o_r.s_password;
+                }
             }
         });
         // auto-detect ports on mount
