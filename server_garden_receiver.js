@@ -6,10 +6,11 @@ let s_path_data = './.gitignored/garden_readings.json';
 let s_path_echarts = './localhost/lib/echarts.esm.min.js';
 let n_port = 8002;
 
-// ensure file exists
+// ensure directory and file exist
 try {
     await Deno.stat(s_path_data);
 } catch {
+    await Deno.mkdir('./.gitignored', { recursive: true });
     await Deno.writeTextFile(s_path_data, '[]');
 }
 
