@@ -1,33 +1,23 @@
 // Garden Weather Station — data receiver
-// Accepts POST /api/readings with JSON array of sensor readings
-// Appends to a single JSON file on disk
+// Uses Deno KV for persistent storage (survives Deno Deploy restarts)
+// Each reading stored as ["readings", n_ts_ms] → dedup is automatic
 
-let s_path_data = './.gitignored/garden_readings.json';
-let s_path_snapshots = './.gitignored/garden_readings_snapshots';
 let s_path_echarts = './localhost/lib/echarts.esm.min.js';
 let n_port = 8002;
-
-// ensure directories and file exist
-try {
-    await Deno.stat(s_path_data);
-} catch {
-    await Deno.mkdir('./.gitignored', { recursive: true });
-    await Deno.writeTextFile(s_path_data, '[]');
-}
-await Deno.mkdir(s_path_snapshots, { recursive: true });
 
 function f_log(s_msg) {
     console.log(`[${new Date().toISOString()}] ${s_msg}`);
 }
 
-f_log(`server starting, data file: ${s_path_data}`);
-try {
-    let s_existing = await Deno.readTextFile(s_path_data);
-    let a_o = JSON.parse(s_existing);
-    f_log(`loaded ${a_o.length} existing readings from file`);
-} catch (e) {
-    f_log(`WARNING: could not read existing data file: ${e.message}`);
+let o_kv = await Deno.openKv();
+f_log('opened Deno KV');
+
+// count existing readings on startup
+let n_startup_count = 0;
+for await (let _entry of o_kv.list({ prefix: ["readings"] })) {
+    n_startup_count++;
 }
+f_log(`KV has ${n_startup_count} existing readings`);
 
 let f_handler = async function(o_request) {
     let o_url = new URL(o_request.url);
@@ -48,24 +38,39 @@ let f_handler = async function(o_request) {
             if (a_o_incoming.length > 0) {
                 let o_first = a_o_incoming[0];
                 let o_last = a_o_incoming[a_o_incoming.length - 1];
-                f_log(`POST /api/readings: first entry ts=${o_first.n_ts_ms} (${new Date(o_first.n_ts_ms).toISOString()}), last ts=${o_last.n_ts_ms} (${new Date(o_last.n_ts_ms).toISOString()})`);
+                f_log(`POST /api/readings: first ts=${o_first.n_ts_ms} (${new Date(o_first.n_ts_ms).toISOString()}), last ts=${o_last.n_ts_ms} (${new Date(o_last.n_ts_ms).toISOString()})`);
             }
-            let s_existing = await Deno.readTextFile(s_path_data);
-            let a_o_existing = JSON.parse(s_existing);
-            f_log(`POST /api/readings: existing file has ${a_o_existing.length} readings`);
-            let o_ts_set = new Set(a_o_existing.map(function(o) { return o.n_ts_ms; }));
-            let a_o_new = a_o_incoming.filter(function(o) { return !o_ts_set.has(o.n_ts_ms); });
-            a_o_existing = a_o_existing.concat(a_o_new);
-            await Deno.writeTextFile(s_path_data, JSON.stringify(a_o_existing, null, 2));
-            f_log(`POST /api/readings: wrote ${a_o_existing.length} total readings to file`);
-            // save snapshot per send event
-            let s_ts = new Date().toISOString().replace(/[:.]/g, '-');
-            let s_snapshot_path = s_path_snapshots + '/' + s_ts + '.json';
-            await Deno.writeTextFile(s_snapshot_path, JSON.stringify(a_o_incoming, null, 2));
-            f_log(`POST /api/readings: saved snapshot to ${s_snapshot_path}`);
-            let s_msg = `received ${a_o_incoming.length}, ${a_o_new.length} new, ${a_o_incoming.length - a_o_new.length} duplicates skipped, total ${a_o_existing.length}`;
+
+            // write each reading to KV keyed by timestamp (automatic dedup)
+            let n_new = 0;
+            let n_dup = 0;
+            // batch writes in groups of 10 (Deno KV atomic limit)
+            for (let i = 0; i < a_o_incoming.length; i += 10) {
+                let o_atomic = o_kv.atomic();
+                let a_o_batch_checks = [];
+                for (let j = i; j < Math.min(i + 10, a_o_incoming.length); j++) {
+                    let o_reading = a_o_incoming[j];
+                    let a_key = ["readings", o_reading.n_ts_ms];
+                    let o_existing = await o_kv.get(a_key);
+                    if (o_existing.value === null) {
+                        o_atomic.set(a_key, o_reading);
+                        n_new++;
+                    } else {
+                        n_dup++;
+                    }
+                }
+                await o_atomic.commit();
+            }
+
+            // count total
+            let n_total = 0;
+            for await (let _entry of o_kv.list({ prefix: ["readings"] })) {
+                n_total++;
+            }
+
+            let s_msg = `received ${a_o_incoming.length}, ${n_new} new, ${n_dup} duplicates skipped, total ${n_total}`;
             f_log(`POST /api/readings: ${s_msg}`);
-            return new Response(JSON.stringify({ s_msg: s_msg, n_total: a_o_existing.length }), {
+            return new Response(JSON.stringify({ s_msg: s_msg, n_total: n_total }), {
                 headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
             });
         } catch (o_error) {
@@ -80,13 +85,17 @@ let f_handler = async function(o_request) {
     // serve readings as JSON for chart
     if (s_path === '/api/readings' && o_request.method === 'GET') {
         try {
-            let a_n_byte = await Deno.readFile(s_path_data);
-            f_log(`GET /api/readings: serving ${a_n_byte.length} bytes`);
-            return new Response(a_n_byte, {
+            let a_o = [];
+            for await (let entry of o_kv.list({ prefix: ["readings"] })) {
+                a_o.push(entry.value);
+            }
+            a_o.sort(function(a, b) { return a.n_ts_ms - b.n_ts_ms; });
+            f_log(`GET /api/readings: serving ${a_o.length} readings`);
+            return new Response(JSON.stringify(a_o), {
                 headers: { 'content-type': 'application/json' },
             });
         } catch (e) {
-            f_log(`GET /api/readings: ERROR reading file - ${e.message}`);
+            f_log(`GET /api/readings: ERROR - ${e.message}`);
             return new Response('[]', {
                 headers: { 'content-type': 'application/json' },
             });
@@ -119,10 +128,10 @@ let f_handler = async function(o_request) {
     // GUI page with file upload
     if (s_path === '/') {
         let n_count = 0;
-        try {
-            let s_existing = await Deno.readTextFile(s_path_data);
-            n_count = JSON.parse(s_existing).length;
-        } catch {}
+        for await (let _entry of o_kv.list({ prefix: ["readings"] })) {
+            n_count++;
+        }
+        f_log(`GET /: ${n_count} readings in KV`);
         let s_html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Wetterstation</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>☀</text></svg>">
@@ -438,4 +447,4 @@ window.f_download = async function() {
 };
 
 Deno.serve({ port: n_port }, f_handler);
-console.log(`Garden receiver listening on port ${n_port}`);
+f_log(`Garden receiver listening on port ${n_port}`);

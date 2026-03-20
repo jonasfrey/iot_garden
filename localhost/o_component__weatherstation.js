@@ -51,6 +51,10 @@ bool f_try_connect_wifi() {
         }
         if (WiFi.status() == WL_CONNECTED) {
             Serial.printf("\\nConnected to %s, IP: %s\\n", A_O_WIFI[i].s_ssid, WiFi.localIP().toString().c_str());
+            if (MDNS.begin("garden")) {
+                MDNS.addService("http", "tcp", 80);
+                Serial.println("mDNS: http://garden.local");
+            }
             return true;
         }
         WiFi.disconnect(true);
@@ -75,6 +79,7 @@ let f_s_ino_code__garden = function(o_config) {
 #include <WiFi.h>
 #include <WebServer.h>
 #include <HTTPClient.h>
+#include <ESPmDNS.h>
 #include <Wire.h>
 #include <Adafruit_BME280.h>
 #include <BH1750.h>
@@ -209,23 +214,69 @@ void f_take_reading() {
 void f_handle_root() {
     size_t n_total = LittleFS.totalBytes();
     size_t n_used = LittleFS.usedBytes();
-    String s_html = "<html><head><title>Garden Station</title></head><body>";
-    s_html += "<h2>Garden Weather Station</h2>";
-    s_html += "<p>Readings stored: " + String(o_meta.n_count) + " / " + String(N_MAX_READINGS) + "</p>";
-    s_html += "<p>Flash: " + String(n_used / 1024) + " / " + String(n_total / 1024) + " KB used</p>";
-    s_html += "<p>Uptime: " + String(millis() / 60000) + " min</p>";
-    s_html += "<h3>Current Readings</h3>";
     float n_t = bme.readTemperature();
     float n_h = bme.readHumidity();
     float n_p = bme.readPressure() / 100.0F;
     float n_l = b_bh1750_ok ? lightMeter.readLightLevel() : -1;
+    String s_html = "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Garden Station</title>";
+    s_html += "<style>";
+    s_html += "body{font-family:monospace;background:#1a1a1a;color:#ccc;margin:0;padding:20px;text-align:center;}";
+    s_html += "#btn_data{display:block;width:100%;padding:40px 0;font-size:32px;font-family:monospace;background:#2a6;color:#fff;border:none;border-radius:12px;cursor:pointer;margin:20px 0;}";
+    s_html += "#btn_data:active{background:#185;}";
+    s_html += "#btn_data:disabled{background:#555;color:#999;}";
+    s_html += "#s_status{margin:20px 0;font-size:18px;white-space:pre-wrap;}";
+    s_html += "#s_loc{font-size:12px;color:#666;margin:5px 0;}";
+    s_html += ".bar_wrap{width:100%;height:24px;background:#333;border-radius:12px;overflow:hidden;margin:10px 0;display:none;}";
+    s_html += ".bar_fill{height:100%;background:#2a6;width:0%;transition:width 0.3s;border-radius:12px;}";
+    s_html += "@keyframes spin{to{transform:rotate(360deg);}}";
+    s_html += ".spinner{display:inline-block;width:20px;height:20px;border:3px solid #555;border-top-color:#2a6;border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-right:8px;}";
+    s_html += "details{text-align:left;margin-top:30px;border-top:1px solid #333;padding-top:10px;}";
+    s_html += "summary{cursor:pointer;color:#888;font-size:13px;}";
+    s_html += ".warn{color:#c55;}";
+    s_html += "</style></head><body>";
+    s_html += "<h2>" + String(o_meta.n_count) + " readings</h2>";
+    s_html += "<button id='btn_data' onclick='f_send()'>DATA</button>";
+    s_html += "<div class='bar_wrap' id='el_bar'><div class='bar_fill' id='el_fill'></div></div>";
+    s_html += "<div id='s_status'></div>";
+    s_html += "<div id='s_loc'></div>";
+    s_html += "<details><summary>advanced</summary>";
     s_html += "<p>Temperature: " + String(n_t, 1) + " &deg;C</p>";
     s_html += "<p>Humidity: " + String(n_h, 1) + " %</p>";
     s_html += "<p>Pressure: " + String(n_p, 1) + " hPa</p>";
     s_html += "<p>Light: " + String(n_l, 1) + " lux</p>";
     s_html += "<hr>";
-    s_html += "<p><a href=\\"/send\\">Send data to server</a></p>";
-    s_html += "<p><a href=\\"#\\" onclick=\\"if(confirm('Really clear all stored data?')) window.location='/clear'; return false;\\">Clear stored data</a></p>";
+    s_html += "<p>Flash: " + String(n_used / 1024) + " / " + String(n_total / 1024) + " KB</p>";
+    s_html += "<p>Uptime: " + String(millis() / 60000) + " min</p>";
+    s_html += "<p>Sent: " + String(o_meta.n_sent_count) + " / " + String(o_meta.n_count) + "</p>";
+    s_html += "<hr>";
+    s_html += "<p><a href='#' onclick=\\"if(confirm('Really clear all stored data?')) window.location='/clear'; return false;\\" class='warn'>Clear stored data</a></p>";
+    s_html += "</details>";
+    s_html += "<script>";
+    s_html += "var n_lat=null,n_lon=null;";
+    s_html += "if(navigator.geolocation){navigator.geolocation.getCurrentPosition(function(p){n_lat=p.coords.latitude;n_lon=p.coords.longitude;document.getElementById('s_loc').textContent='location: '+n_lat.toFixed(5)+', '+n_lon.toFixed(5);},function(e){document.getElementById('s_loc').textContent='no location: '+e.message;},{enableHighAccuracy:true,timeout:10000});}";
+    s_html += "function f_send(){";
+    s_html += "var el=document.getElementById('s_status');";
+    s_html += "var btn=document.getElementById('btn_data');";
+    s_html += "var bar=document.getElementById('el_bar');";
+    s_html += "var fill=document.getElementById('el_fill');";
+    s_html += "btn.disabled=true;";
+    s_html += "btn.innerHTML='<span class=spinner></span>sending...';";
+    s_html += "bar.style.display='block';fill.style.width='0%';";
+    s_html += "el.textContent='';";
+    s_html += "var s_url='/send';";
+    s_html += "if(n_lat!==null&&n_lon!==null){s_url+='?lat='+n_lat+'&lon='+n_lon;}";
+    s_html += "var es=new EventSource(s_url);";
+    s_html += "es.onmessage=function(ev){";
+    s_html += "var o=JSON.parse(ev.data);";
+    s_html += "if(o.n_total){var pct=Math.round(o.n_sent/o.n_total*100);fill.style.width=pct+'%';btn.innerHTML='<span class=spinner></span>'+o.n_sent+' / '+o.n_total;el.textContent=pct+'%'+(o.n_errors?' ('+o.n_errors+' errors)':'');}";
+    s_html += "if(o.b_done){es.close();fill.style.width='100%';";
+    s_html += "if(o.n_errors>0){btn.textContent='DONE ('+o.n_errors+' errors)';btn.style.background='#c55';}";
+    s_html += "else{btn.textContent='DONE';btn.style.background='#2a6';el.textContent='all sent!';}";
+    s_html += "if(o.s_redirect){el.textContent='redirecting...';setTimeout(function(){window.location=o.s_redirect;},1500);}";
+    s_html += "}};";
+    s_html += "es.onerror=function(){es.close();el.textContent='connection lost';btn.textContent='DATA';btn.disabled=false;btn.innerHTML='DATA';bar.style.display='none';};";
+    s_html += "}";
+    s_html += "</script>";
     s_html += "</body></html>";
     server.send(200, "text/html", s_html);
 }
@@ -315,14 +366,26 @@ void f_send_unsent() {
 
 void f_handle_send() {
     if (o_meta.n_count == 0) {
-        server.send(200, "text/html", "<html><body><p>No data to send.</p><a href=\\"/\\">Back</a></body></html>");
+        server.send(200, "text/event-stream", "data: {\\"b_done\\":true,\\"s_msg\\":\\"no data\\"}\n\n");
         return;
     }
     File file = LittleFS.open(S_DATA_PATH, "r");
     if (!file) {
-        server.send(500, "text/html", "<html><body><p>Failed to open data file.</p><a href=\\"/\\">Back</a></body></html>");
+        server.send(500, "text/event-stream", "data: {\\"b_done\\":true,\\"s_msg\\":\\"file error\\"}\n\n");
         return;
     }
+
+    // parse optional location from query params
+    String s_lat = server.arg("lat");
+    String s_lon = server.arg("lon");
+    bool b_has_loc = (s_lat.length() > 0 && s_lon.length() > 0);
+    if (b_has_loc) {
+        Serial.printf("Location: %s, %s\\n", s_lat.c_str(), s_lon.c_str());
+    }
+
+    // stream progress via SSE
+    server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+    server.send(200, "text/event-stream", "");
 
     int n_start = (o_meta.n_count < N_MAX_READINGS) ? 0 : o_meta.n_write_idx;
     int n_sent = 0;
@@ -338,10 +401,16 @@ void f_handle_send() {
             file.seek(n_idx * sizeof(O_Reading));
             file.read((uint8_t*)&o_r, sizeof(O_Reading));
             if (i > 0) s_json += ",";
-            char s_buf[256];
-            snprintf(s_buf, sizeof(s_buf),
-                "{\\"n_temperature\\":%.2f,\\"n_humidity\\":%.2f,\\"n_pressure\\":%.2f,\\"n_lux\\":%.2f,\\"n_ts_ms\\":%llu}",
-                o_r.n_temperature, o_r.n_humidity, o_r.n_pressure, o_r.n_lux, o_r.n_ts_ms);
+            char s_buf[384];
+            if (b_has_loc) {
+                snprintf(s_buf, sizeof(s_buf),
+                    "{\\"n_temperature\\":%.2f,\\"n_humidity\\":%.2f,\\"n_pressure\\":%.2f,\\"n_lux\\":%.2f,\\"n_ts_ms\\":%llu,\\"n_lat\\":%s,\\"n_lon\\":%s}",
+                    o_r.n_temperature, o_r.n_humidity, o_r.n_pressure, o_r.n_lux, o_r.n_ts_ms, s_lat.c_str(), s_lon.c_str());
+            } else {
+                snprintf(s_buf, sizeof(s_buf),
+                    "{\\"n_temperature\\":%.2f,\\"n_humidity\\":%.2f,\\"n_pressure\\":%.2f,\\"n_lux\\":%.2f,\\"n_ts_ms\\":%llu}",
+                    o_r.n_temperature, o_r.n_humidity, o_r.n_pressure, o_r.n_lux, o_r.n_ts_ms);
+            }
             s_json += s_buf;
         }
         s_json += "]";
@@ -360,18 +429,21 @@ void f_handle_send() {
             Serial.printf("POST failed: HTTP %d\\n", n_code);
             if (n_errors >= 3) break;
         }
+
+        // send progress event
+        String s_evt = "data: {\\"n_sent\\":" + String(n_sent) + ",\\"n_total\\":" + String(o_meta.n_count) + ",\\"n_errors\\":" + String(n_errors) + "}\n\n";
+        server.sendContent(s_evt);
     }
     file.close();
 
+    // send final done event
+    String s_redirect = String(S_SERVER_URL).substring(0, String(S_SERVER_URL).lastIndexOf("/api"));
+    String s_done = "data: {\\"b_done\\":true,\\"n_sent\\":" + String(n_sent) + ",\\"n_total\\":" + String(o_meta.n_count) + ",\\"n_errors\\":" + String(n_errors);
     if (n_errors == 0) {
-        server.sendHeader("Location", String(S_SERVER_URL).substring(0, String(S_SERVER_URL).lastIndexOf("/api")));
-        server.send(302);
-    } else {
-        String s_html = "<html><body>";
-        s_html += "<p>Sent " + String(n_sent) + " readings, " + String(n_errors) + " errors.</p>";
-        s_html += "<a href=\\"/\\">Back</a></body></html>";
-        server.send(200, "text/html", s_html);
+        s_done += ",\\"s_redirect\\":\\"" + s_redirect + "\\"";
     }
+    s_done += "}\n\n";
+    server.sendContent(s_done);
 }
 
 void f_handle_clear() {
