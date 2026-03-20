@@ -3,42 +3,73 @@
 // Appends to a single JSON file on disk
 
 let s_path_data = './.gitignored/garden_readings.json';
+let s_path_snapshots = './.gitignored/garden_readings_snapshots';
 let s_path_echarts = './localhost/lib/echarts.esm.min.js';
 let n_port = 8002;
 
-// ensure directory and file exist
+// ensure directories and file exist
 try {
     await Deno.stat(s_path_data);
 } catch {
     await Deno.mkdir('./.gitignored', { recursive: true });
     await Deno.writeTextFile(s_path_data, '[]');
 }
+await Deno.mkdir(s_path_snapshots, { recursive: true });
+
+function f_log(s_msg) {
+    console.log(`[${new Date().toISOString()}] ${s_msg}`);
+}
+
+f_log(`server starting, data file: ${s_path_data}`);
+try {
+    let s_existing = await Deno.readTextFile(s_path_data);
+    let a_o = JSON.parse(s_existing);
+    f_log(`loaded ${a_o.length} existing readings from file`);
+} catch (e) {
+    f_log(`WARNING: could not read existing data file: ${e.message}`);
+}
 
 let f_handler = async function(o_request) {
     let o_url = new URL(o_request.url);
     let s_path = o_url.pathname;
+    f_log(`${o_request.method} ${s_path}`);
 
     if (s_path === '/api/readings' && o_request.method === 'POST') {
         try {
             let a_o_incoming = await o_request.json();
+            f_log(`POST /api/readings: received body with ${Array.isArray(a_o_incoming) ? a_o_incoming.length : 'non-array'} entries`);
             if (!Array.isArray(a_o_incoming)) {
+                f_log(`POST /api/readings: ERROR - body is not an array`);
                 return new Response(JSON.stringify({ s_error: 'expected array' }), {
                     status: 400,
                     headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
                 });
             }
+            if (a_o_incoming.length > 0) {
+                let o_first = a_o_incoming[0];
+                let o_last = a_o_incoming[a_o_incoming.length - 1];
+                f_log(`POST /api/readings: first entry ts=${o_first.n_ts_ms} (${new Date(o_first.n_ts_ms).toISOString()}), last ts=${o_last.n_ts_ms} (${new Date(o_last.n_ts_ms).toISOString()})`);
+            }
             let s_existing = await Deno.readTextFile(s_path_data);
             let a_o_existing = JSON.parse(s_existing);
+            f_log(`POST /api/readings: existing file has ${a_o_existing.length} readings`);
             let o_ts_set = new Set(a_o_existing.map(function(o) { return o.n_ts_ms; }));
             let a_o_new = a_o_incoming.filter(function(o) { return !o_ts_set.has(o.n_ts_ms); });
             a_o_existing = a_o_existing.concat(a_o_new);
             await Deno.writeTextFile(s_path_data, JSON.stringify(a_o_existing, null, 2));
+            f_log(`POST /api/readings: wrote ${a_o_existing.length} total readings to file`);
+            // save snapshot per send event
+            let s_ts = new Date().toISOString().replace(/[:.]/g, '-');
+            let s_snapshot_path = s_path_snapshots + '/' + s_ts + '.json';
+            await Deno.writeTextFile(s_snapshot_path, JSON.stringify(a_o_incoming, null, 2));
+            f_log(`POST /api/readings: saved snapshot to ${s_snapshot_path}`);
             let s_msg = `received ${a_o_incoming.length}, ${a_o_new.length} new, ${a_o_incoming.length - a_o_new.length} duplicates skipped, total ${a_o_existing.length}`;
-            console.log(s_msg);
+            f_log(`POST /api/readings: ${s_msg}`);
             return new Response(JSON.stringify({ s_msg: s_msg, n_total: a_o_existing.length }), {
                 headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
             });
         } catch (o_error) {
+            f_log(`POST /api/readings: EXCEPTION - ${o_error.message}\n${o_error.stack}`);
             return new Response(JSON.stringify({ s_error: o_error.message }), {
                 status: 500,
                 headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
@@ -50,10 +81,12 @@ let f_handler = async function(o_request) {
     if (s_path === '/api/readings' && o_request.method === 'GET') {
         try {
             let a_n_byte = await Deno.readFile(s_path_data);
+            f_log(`GET /api/readings: serving ${a_n_byte.length} bytes`);
             return new Response(a_n_byte, {
                 headers: { 'content-type': 'application/json' },
             });
-        } catch {
+        } catch (e) {
+            f_log(`GET /api/readings: ERROR reading file - ${e.message}`);
             return new Response('[]', {
                 headers: { 'content-type': 'application/json' },
             });
