@@ -366,12 +366,12 @@ void f_send_unsent() {
 
 void f_handle_send() {
     if (o_meta.n_count == 0) {
-        server.send(200, "text/event-stream", "data: {\\"b_done\\":true,\\"s_msg\\":\\"no data\\"}\n\n");
+        server.send(200, "text/event-stream", "data: {\\"b_done\\":true,\\"s_msg\\":\\"no data\\"}\\n\\n");
         return;
     }
     File file = LittleFS.open(S_DATA_PATH, "r");
     if (!file) {
-        server.send(500, "text/event-stream", "data: {\\"b_done\\":true,\\"s_msg\\":\\"file error\\"}\n\n");
+        server.send(500, "text/event-stream", "data: {\\"b_done\\":true,\\"s_msg\\":\\"file error\\"}\\n\\n");
         return;
     }
 
@@ -431,7 +431,7 @@ void f_handle_send() {
         }
 
         // send progress event
-        String s_evt = "data: {\\"n_sent\\":" + String(n_sent) + ",\\"n_total\\":" + String(o_meta.n_count) + ",\\"n_errors\\":" + String(n_errors) + "}\n\n";
+        String s_evt = "data: {\\"n_sent\\":" + String(n_sent) + ",\\"n_total\\":" + String(o_meta.n_count) + ",\\"n_errors\\":" + String(n_errors) + "}\\n\\n";
         server.sendContent(s_evt);
     }
     file.close();
@@ -442,7 +442,7 @@ void f_handle_send() {
     if (n_errors == 0) {
         s_done += ",\\"s_redirect\\":\\"" + s_redirect + "\\"";
     }
-    s_done += "}\n\n";
+    s_done += "}\\n\\n";
     server.sendContent(s_done);
 }
 
